@@ -2,16 +2,38 @@
 <html>
 <head>
     <title>Register</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f8f9fa;
+            text-align: center;
+            margin-top: 50px;
+        }
+        .container {
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: inline-block;
+            padding: 20px 40px;
+        }
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+    </style>
 </head>
 <body>
-    <h2>Register</h2>
+    <div class="container">
+        <h2>Register</h2>
     <form action="/submit" method="post">
         <label for="name">Name:</label>
         <input type="text" name="name" required><br><br>
         <label for="email">Email:</label>
         <input type="email" name="email" required><br><br>
-        <button type="submit">Register</button>
+        <button type="submit">Sign In</button>
     </form>
         <a href="/users" style="font-size:18px;">View Registered Users</a>
+    </div>
+    
 </body>
 </html>
