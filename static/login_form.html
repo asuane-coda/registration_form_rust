@@ -1,20 +1,22 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Register</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
-        <h2>Register</h2>
-    <form action="/submit" method="post">
-        <label for="name">Name:</label>
-        <input type="text" name="name" required><br><br>
+        <h2>Login</h2>
+    <form action="/login" method="post">
+        
         <label for="email">Email:</label>
         <input type="text" name="email" required><br><br>
          <label for="password">Password:</label>
         <input type="password" name="password" required><br><br>
-        <button type="submit">Register</button>
+        <button type="submit">Login</button>
     </form>
     </div>
     

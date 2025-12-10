@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>User Profile</title>
+    <title>Profile</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -29,12 +29,14 @@
         <p><strong>Name:</strong> {{ user.name }}</p>
         <p><strong>Email:</strong> {{ user.email }}</p>
         <p><strong>Created At:</strong> {{ user.created_at }}</p>
-        <img src="/uploads/{{profile_picture}}" width="150">
 
-         <p><a href="/users/{{ user.id }}/edit">Edit</a></p>
+         <p><a
+            
+        href="/users/{{ user.id }}/edit">Edit</a></p>
 
-        
+        {% if is_admin %}
+            <p><a href="/users">View All Registered Users</a></p>
+        {% endif %}
     </div>
-    <p><a href="/users">Back to Users List</a></p>
 </body>
 </html>

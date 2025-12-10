@@ -1,25 +1,26 @@
 use actix_files as fs;
-use actix_web::{web, App, HttpResponse, HttpServer, Responder};
+use actix_web::{web, App, HttpResponse, HttpServer, Responder, Result};
 use lettre::{Message, SmtpTransport, Transport};
 use lettre::transport::smtp::authentication::Credentials;
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use actix_web::error::ErrorInternalServerError;
-use actix_web::Error;
 use tera::{Tera, Context};
 use actix_session::Session;
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 use actix_web::cookie::Key;
-
-
-
+use bcrypt::{hash, DEFAULT_COST};
+use bcrypt::verify;
+use actix_web::get;
 
 
 #[derive(Deserialize)]
 struct FormData {
     name: String,
     email: String,
+    #[serde(default)]
+    password: String,
 }
 
 #[derive(sqlx::FromRow, serde::Serialize)]
@@ -27,15 +28,15 @@ struct User {
     id: i32,
     name: String,
     email: String,
-    created_at: chrono::NaiveDateTime,
-    role: String,
+    created_at: chrono::NaiveDate,
+   
 }
 
 // HANDLE FORM SUBMISSION
 async fn submit_form(
     form: web::Form<FormData>,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Error> {
+) -> Result<HttpResponse, actix_web::Error> {
     let email = Message::builder()
         .from("The Rust Team <your.email@gmail.com>".parse().unwrap())
         .to(format!("{} <{}>", form.name, form.email).parse().unwrap())
@@ -55,14 +56,27 @@ async fn submit_form(
         return Ok(HttpResponse::Conflict().body("Email already registered"));
     }
 
-   sqlx::query(
-    "INSERT INTO users (name, email) VALUES ($1, $2)"
+    if form.password.is_empty() {
+        return Ok(HttpResponse::BadRequest().body("Password is required"));
+    }
+
+      // Hash password
+    let password_hash = hash(&form.password, DEFAULT_COST)
+        .map_err(|_| ErrorInternalServerError("Password hashing failed"))?;
+
+     // Insert new user
+
+   let new_user: (i32,) = sqlx::query_as(
+    "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id"
 )
     .bind(&form.name)
     .bind(&form.email)
-    .execute(pool.get_ref())
+    .bind(&password_hash)
+    .fetch_one(pool.get_ref())
     .await
     .map_err(ErrorInternalServerError)?;
+
+    let new_user_id = new_user.0;
 
     let creds = Credentials::new(
         "ekoiasuanetop@gmail.com".to_string(),
@@ -74,32 +88,46 @@ async fn submit_form(
         .credentials(creds)
         .build();
 
+    let response_body = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registration Success</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container message-container">
+        <h1>Registration Successful!</h1>
+        <p>Registration saved and email sent!</p>
+        <a href="/login" class="button">Login</a>
+    </div>
+</body>
+</html>"#
+    );
+
     match mailer.send(&email) {
-        Ok(_) => Ok(HttpResponse::Ok().body("Registration saved and email sent!")),
+        Ok(_) => Ok(HttpResponse::Ok().content_type("text/html").body(response_body)),
         Err(_) => Ok(HttpResponse::InternalServerError().body("Failed to send email")),
     }
 }
 
-// LIST USERS - ADMIN ONLY
+// LIST USERS
 async fn list_users(
     session: Session,
     pool: web::Data<PgPool>,
     tmpl: web::Data<Tera>,
 ) -> impl Responder {
-
-    // 1. Check login
-    let role: String = match session.get("role").unwrap_or(None) {
-        Some(r) => r,
-        None => return HttpResponse::Unauthorized().body("Please log in"),
-    };
-
-    // 2. Allow admin only
-    if role != "admin" {
-        return HttpResponse::Forbidden().body("Access denied: Admins only");
+    // 1. Check if user is the admin
+    let email: Option<String> = session.get("email").unwrap_or(None);
+    if email.as_deref() != Some("admin@gmail.com") {
+        // If not admin, redirect to login page
+        return HttpResponse::Found().append_header(("Location", "/login")).finish();
     }
 
-    // 3. Admin can view all users
-    let users = sqlx::query_as::<_, User>("SELECT * FROM users")
+    // 2. Fetch and display users for the admin
+    let users = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users")
         .fetch_all(pool.get_ref())
         .await
         .unwrap();
@@ -114,30 +142,14 @@ async fn list_users(
 
 // VIEW USER PROFILE
 async fn view_user(
-    session: Session,
     pool: web::Data<PgPool>,
     tmpl: web::Data<Tera>,
     path: web::Path<i32>,
 ) -> impl Responder {
     let requested_id = path.into_inner();
 
-    // 1. Check logged-in user
-    let user_id: i32 = match session.get("user_id").unwrap_or(None) {
-        Some(id) => id,
-        None => return HttpResponse::Unauthorized().body("Please log in"),
-    };
-
-    let role: String = session.get("role").unwrap().unwrap();
-
-    // 2. Access rules:
-    // Admin can view anyone
-    // Users can only view THEIR OWN profile
-    if role != "admin" && user_id != requested_id {
-        return HttpResponse::Forbidden().body("You can only view your own profile");
-    }
-
     // Fetch the user
-    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users WHERE id = $1")
         .bind(requested_id)
         .fetch_one(pool.get_ref())
         .await
@@ -159,7 +171,7 @@ pub async fn edit_user_form(
 ) -> impl Responder {
     let user_id = path.into_inner();
 
-    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
+    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(pool.get_ref())
         .await;
@@ -206,9 +218,19 @@ async fn update_user_name(
 
 
 // DOWNLOAD USERS CSV
-pub async fn download_users_csv(pool: web::Data<PgPool>) -> impl Responder {
-    // Fetch all users
-   let users = sqlx::query_as::<_, User>("SELECT id, name, email, created_at, role FROM users")
+pub async fn download_users_csv(
+    session: Session,
+    pool: web::Data<PgPool>
+) -> impl Responder {
+    // 1. Check if user is the admin
+    let email: Option<String> = session.get("email").unwrap_or(None);
+    if email.as_deref() != Some("admin@gmail.com") {
+        // If not admin, redirect to login page
+        return HttpResponse::Found().append_header(("Location", "/login")).finish();
+    }
+
+    // 2. Fetch all users
+   let users = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users")
     .fetch_all(pool.get_ref())
     .await;
 
@@ -223,7 +245,7 @@ pub async fn download_users_csv(pool: web::Data<PgPool>) -> impl Responder {
 
     for user in users {
         csv_data.push_str(&format!(
-            "{},{:?},{:?},{:?}\n",
+            "{},{},{},{}\n",
             user.id,
             user.name,
             user.email,
@@ -236,6 +258,114 @@ pub async fn download_users_csv(pool: web::Data<PgPool>) -> impl Responder {
         .insert_header(("Content-Disposition", "attachment; filename=\"users.csv\""))
         .body(csv_data)
 }
+
+
+// LOGIN REQUEST 
+
+#[derive(Deserialize)]
+    pub struct LoginRequest {
+    pub email: String,
+    #[serde(default)]
+    pub password: String,
+}
+
+pub async fn login(
+    form: web::Form<LoginRequest>,
+    session: Session,
+    pool: web::Data<sqlx::PgPool>,
+) -> actix_web::Result<HttpResponse> {
+    if form.password.is_empty() {
+        return Ok(HttpResponse::BadRequest().body("Password is required"));
+    }
+    // Fetch user by email
+    let user = sqlx::query_as::<_, (i32, String)>(
+        "SELECT id, password_hash FROM users WHERE email = $1"
+    )
+    .bind(&form.email)
+    .fetch_optional(pool.as_ref())
+    .await
+    .map_err(|_| ErrorInternalServerError("Login failed"))?;
+
+    let (id, password_hash) = match user {
+        Some(u) => u,
+        None => return Ok(HttpResponse::Unauthorized().body("Invalid email or password")),
+    };
+
+    // Verify password
+    let is_valid = verify(&form.password, &password_hash)
+          .map_err(|_| ErrorInternalServerError("Password verification failed"))?;
+
+    if !is_valid {
+        return Ok(HttpResponse::Unauthorized().body("Invalid email or password"));
+    }
+
+    // Store user ID and role in session
+    session.insert("user_id", id)?;
+    session.insert("email", form.email.clone())?;
+
+
+    // Redirect to profile
+    Ok(HttpResponse::Found()
+        .append_header(("Location", "/profile"))
+        .finish())
+
+}
+
+//LOGIN FORM
+
+async fn login_page(tmpl: web::Data<Tera>) -> impl Responder {
+    let ctx = Context::new();
+    let rendered = tmpl.render("login_form.html", &ctx).unwrap();
+    HttpResponse::Ok().body(rendered)
+}
+
+#[get("/profile")]
+async fn profile(
+    session: Session,
+    pool: web::Data<PgPool>,
+    tmpl: web::Data<Tera>
+) -> actix_web::Result<HttpResponse> { // Use explicit actix_web::Result to fix compiler error
+    
+    // 1. Check if user is logged in
+    let user_id: i32 = match session.get("user_id").unwrap_or(None) {
+        Some(id) => id,
+        None => {
+            // If not logged in, redirect to login page
+            return Ok(HttpResponse::Found().append_header(("Location", "/login")).finish());
+        }
+    };
+
+    // 2. Fetch user details from DB
+    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool.get_ref())
+        .await
+        .map_err(ErrorInternalServerError)?;
+
+    // 3. Render the profile.html template
+    match user {
+        Some(u) => {
+            let mut ctx = Context::new();
+            ctx.insert("user", &u);
+            
+            // Check if the user is the admin
+            let is_admin = u.email == "admin@gmail.com";
+            ctx.insert("is_admin", &is_admin);
+
+            // Render template (allows {{ user.name }} and {{ is_admin }} to work)
+            let rendered = tmpl.render("profile.html", &ctx)
+                .map_err(ErrorInternalServerError)?;
+                
+            Ok(HttpResponse::Ok().body(rendered))
+        }
+        None => {
+            // Session exists but user not in DB? Force logout/login
+            Ok(HttpResponse::Found().append_header(("Location", "/login")).finish())
+        }
+    }
+}
+
+
 
 
 
@@ -258,7 +388,11 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to Redis");
     
-    let secret_key = Key::generate();
+    let key = Key::from(
+        std::env::var("SESSION_SECRET")
+            .expect("SESSION_SECRET must be set")
+            .as_bytes()
+    );
 
     HttpServer::new(move || {
         App::new()
@@ -268,7 +402,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 SessionMiddleware::new(
                     redis_store.clone(),
-                    secret_key.clone(),
+                    key.clone(),
                 )
             )
 
@@ -278,6 +412,9 @@ async fn main() -> std::io::Result<()> {
             // List users
             .route("/users", web::get().to(list_users))
 
+            //Download users list
+            .route("/users/download", web::get().to(download_users_csv))
+
             // View user profile
             .route("/users/{id}", web::get().to(view_user))
 
@@ -285,11 +422,18 @@ async fn main() -> std::io::Result<()> {
             .route("/users/{id}/edit", web::get().to(edit_user_form))
             .route("/users/{id}/edit", web::post().to(update_user_name))
 
-            //Download users list
-            .route("/users/download", web::get().to(download_users_csv))
+            // Login
+            .route("/login", web::get().to(login_page))
+            .route("/login", web::post().to(login))
+
+            
+
 
             // Static files
+            .service(profile)
             .service(fs::Files::new("/", "./static").index_file("index.html"))
+            
+
     })
     .bind(("127.0.0.1", 8080))?
     .run()
