@@ -2,13 +2,14 @@ use actix_files as fs;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder, Result};
 use lettre::{Message, SmtpTransport, Transport};
 use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::client::{Tls, TlsParameters};
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use actix_web::error::ErrorInternalServerError;
 use tera::{Tera, Context};
 use actix_session::Session;
-use actix_session::{SessionMiddleware, storage::RedisSessionStore};
+use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::cookie::Key;
 use bcrypt::{hash, DEFAULT_COST};
 use bcrypt::verify;
@@ -92,7 +93,7 @@ async fn submit_form(
     }
 
     let email_message = Message::builder()
-        .from("The Rust Team <your.email@gmail.com>".parse().unwrap())
+        .from("The Rust Team <ekoiasuanetop@gmail.com>".parse().unwrap())
         .to(format!("{} <{}>", name, email).parse().unwrap())
         .subject("Welcome!")
         .body(format!("Dear {}. Thank you for registering!\nFrom the Rust team", name))
@@ -138,8 +139,11 @@ async fn submit_form(
         "skabqfjdtoaqaopi".to_string(),
     );
 
+    let tls_parameters = TlsParameters::new("smtp.gmail.com".to_string()).unwrap();
     let mailer = SmtpTransport::relay("smtp.gmail.com")
         .unwrap()
+        .port(587)
+        .tls(Tls::Required(tls_parameters))
         .credentials(creds)
         .build();
 
@@ -182,7 +186,10 @@ async fn submit_form(
 
     match mailer.send(&email_message) {
         Ok(_) => Ok(HttpResponse::Ok().content_type("text/html").body(response_body)),
-        Err(_) => Ok(HttpResponse::InternalServerError().body("Failed to send email")),
+        Err(e) => {
+            println!("Email send error: {:?}", e);
+            Ok(HttpResponse::InternalServerError().body(format!("Failed to send email: {}", e)))
+        }
     }
 }
 
@@ -458,9 +465,9 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to initialize Tera templates");
 
     // Create Redis store BEFORE HttpServer::new
-    let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
-        .await
-        .expect("Failed to connect to Redis");
+    // let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
+    //     .await
+    //     .expect("Failed to connect to Redis");
     
     let key = Key::from(
         std::env::var("SESSION_SECRET")
@@ -474,10 +481,12 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(tera.clone()))
             
             .wrap(
-                SessionMiddleware::new(
-                    redis_store.clone(),
+                SessionMiddleware::builder(
+                    CookieSessionStore::default(),
                     key.clone(),
                 )
+                .cookie_secure(false)
+                .build()
             )
 
             // Form submission
