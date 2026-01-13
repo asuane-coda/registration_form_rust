@@ -17,8 +17,12 @@ tera = "1.19"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 actix-multipart = "0.6"
 rocket-session-store = "0.2.1"
-actix-session = { version = "0.9", features = ["redis-rs-session"] }
+actix-session = { version = "0.9", features = ["redis-rs-session", "cookie-session"] }
 bcrypt = "0.15"
+image = "0.24"
+base64 = "0.21"
+futures-util = "0.3"
+uuid = { version = "1.4", features = ["v4"] }
 
 
 

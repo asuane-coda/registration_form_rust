@@ -3,14 +3,158 @@
 <head>
     <meta charset="UTF-8">
     <title>Edit User</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            margin: 0;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            background: #ffffff;
+            padding: 3.5rem;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+            margin-top: 1rem;
+            width: 100%;
+            max-width: 520px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+        
+        .container:hover {
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.12);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #1a1a2e;
+            font-weight: 800;
+            margin-top: 0;
+            margin-bottom: 2rem;
+            font-size: 1.9rem;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        label {
+            margin-bottom: 0.8rem;
+            color: #495057;
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            display: block;
+        }
+        
+        input[type="text"] {
+            padding: 1.2rem;
+            margin-bottom: 1.8rem;
+            border-radius: 12px;
+            border: 2px solid #e9ecef;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background-color: #f8f9fa;
+            font-family: 'Inter', inherit;
+            font-weight: 500;
+            color: #1a1a2e;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+            background-color: #ffffff;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+        }
+        
+        input[type="text"]:hover {
+            border-color: #667eea;
+            background-color: #f8f9fa;
+        }
+        
+        button[type="submit"] {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.2rem 2rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 800;
+            width: 100%;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        button[type="submit"]:hover {
+            box-shadow: 0 12px 30px rgba(102, 126, 234, 0.5);
+            transform: translateY(-3px);
+        }
+        
+        button[type="submit"]:active {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 2.5rem 1.5rem;
+                border-radius: 16px;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+                margin-bottom: 1.5rem;
+            }
+
+            label {
+                font-size: 0.85rem;
+            }
+
+            input[type="text"] {
+                padding: 1rem;
+                margin-bottom: 1.5rem;
+                border-radius: 10px;
+            }
+
+            button[type="submit"] {
+                padding: 1rem 1.5rem;
+            }
+        }
+    </style>
 </head>
 <body>
-    <h1>Edit</h1>
+    <div class="container">
+        <h1>Edit</h1>
 
-    <form action="/users/{{ user.id }}/edit" method="post">
-        <label for="name">Name:</label>
-        <input type="text" id="name" name="name" value="{{ user.name }}">
-        <button type="submit">Save Changes</button>
-    </form>
+        <form action="/users/{{ user.id }}/edit" method="post">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" value="{{ user.name }}">
+            <button type="submit">Save Changes</button>
+        </form>
+    </div>
 </body>
 </html>

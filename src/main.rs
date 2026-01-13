@@ -2,25 +2,30 @@ use actix_files as fs;
 use actix_web::{web, App, HttpResponse, HttpServer, Responder, Result};
 use lettre::{Message, SmtpTransport, Transport};
 use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::client::{Tls, TlsParameters};
 use serde::Deserialize;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use actix_web::error::ErrorInternalServerError;
 use tera::{Tera, Context};
 use actix_session::Session;
-use actix_session::{SessionMiddleware, storage::RedisSessionStore};
+use actix_session::{SessionMiddleware, storage::CookieSessionStore};
 use actix_web::cookie::Key;
 use bcrypt::{hash, DEFAULT_COST};
 use bcrypt::verify;
 use actix_web::get;
+use actix_multipart::Multipart;
+use futures_util::stream::StreamExt;
+use std::io::Cursor;
+use base64::engine::general_purpose;
+use base64::Engine;
+use image::{ImageFormat, imageops::FilterType};
 
 
 #[derive(Deserialize)]
 struct FormData {
     name: String,
     email: String,
-    #[serde(default)]
-    password: String,
 }
 
 #[derive(sqlx::FromRow, serde::Serialize)]
@@ -29,25 +34,75 @@ struct User {
     name: String,
     email: String,
     created_at: chrono::NaiveDate,
-   
+    profile_picture: Option<String>,
 }
 
 // HANDLE FORM SUBMISSION
 async fn submit_form(
-    form: web::Form<FormData>,
+    mut payload: Multipart,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let email = Message::builder()
-        .from("The Rust Team <your.email@gmail.com>".parse().unwrap())
-        .to(format!("{} <{}>", form.name, form.email).parse().unwrap())
+    let mut name = "".to_string();
+    let mut email = "".to_string();
+    let mut password = "".to_string();
+    let mut profile_picture: Option<String> = None;
+
+    while let Some(item) = payload.next().await {
+        let mut field = item.unwrap();
+        let content_disposition = field.content_disposition();
+        let field_name = content_disposition.get_name().unwrap();
+
+        match field_name {
+            "name" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    bytes.extend_from_slice(&chunk.unwrap());
+                }
+                name = String::from_utf8(bytes).unwrap();
+            }
+            "email" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    bytes.extend_from_slice(&chunk.unwrap());
+                }
+                email = String::from_utf8(bytes).unwrap();
+            }
+            "password" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    bytes.extend_from_slice(&chunk.unwrap());
+                }
+                password = String::from_utf8(bytes).unwrap();
+            }
+            "profile_picture" => {
+                let mut bytes = Vec::new();
+                while let Some(chunk) = field.next().await {
+                    bytes.extend_from_slice(&chunk.unwrap());
+                }
+                
+                if !bytes.is_empty() {
+                    let img = image::load_from_memory(&bytes).unwrap();
+                    let resized_img = img.resize_to_fill(100, 100, FilterType::Lanczos3);
+                    let mut buf = Cursor::new(Vec::new());
+                    resized_img.write_to(&mut buf, ImageFormat::Png).unwrap();
+                    profile_picture = Some(general_purpose::STANDARD.encode(buf.into_inner()));
+                }
+            }
+            _ => (),
+        }
+    }
+
+    let email_message = Message::builder()
+        .from("The Rust Team <ekoiasuanetop@gmail.com>".parse().unwrap())
+        .to(format!("{} <{}>", name, email).parse().unwrap())
         .subject("Welcome!")
-        .body(format!("Dear {}. Thank you for registering!\nFrom the Rust team", form.name))
+        .body(format!("Dear {}. Thank you for registering!\nFrom the Rust team", name))
         .unwrap();
 
     let existing_user = sqlx::query_scalar::<_, i32>(
     "SELECT id FROM users WHERE email = $1"
 )
-    .bind(&form.email)
+    .bind(&email)
     .fetch_optional(pool.get_ref())
     .await
     .map_err(ErrorInternalServerError)?;
@@ -56,22 +111,23 @@ async fn submit_form(
         return Ok(HttpResponse::Conflict().body("Email already registered"));
     }
 
-    if form.password.is_empty() {
+    if password.is_empty() {
         return Ok(HttpResponse::BadRequest().body("Password is required"));
     }
 
       // Hash password
-    let password_hash = hash(&form.password, DEFAULT_COST)
+    let password_hash = hash(&password, DEFAULT_COST)
         .map_err(|_| ErrorInternalServerError("Password hashing failed"))?;
 
      // Insert new user
 
    let new_user: (i32,) = sqlx::query_as(
-    "INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id"
+    "INSERT INTO users (name, email, password_hash, profile_picture) VALUES ($1, $2, $3, $4) RETURNING id"
 )
-    .bind(&form.name)
-    .bind(&form.email)
+    .bind(&name)
+    .bind(&email)
     .bind(&password_hash)
+    .bind(&profile_picture)
     .fetch_one(pool.get_ref())
     .await
     .map_err(ErrorInternalServerError)?;
@@ -83,8 +139,11 @@ async fn submit_form(
         "skabqfjdtoaqaopi".to_string(),
     );
 
+    let tls_parameters = TlsParameters::new("smtp.gmail.com".to_string()).unwrap();
     let mailer = SmtpTransport::relay("smtp.gmail.com")
         .unwrap()
+        .port(587)
+        .tls(Tls::Required(tls_parameters))
         .credentials(creds)
         .build();
 
@@ -97,21 +156,43 @@ async fn submit_form(
     <title>Registration Success</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-    <div class="container message-container">
-        <h1>Registration Successful!</h1>
-        <p>Registration saved and email sent!</p>
-        <a href="/login" class="button">Login</a>
+<body style="font-family: 'Inter', Arial, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 40px 20px; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);">
+    <div class="container message-container" style="background-color: #ffffff; padding: 3.5rem; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08); text-align: center; max-width: 520px; width: 100%; border: 1px solid rgba(0, 0, 0, 0.05);">
+        <h1 style="margin-bottom: 2rem; font-size: 2.2rem; font-weight: 800; letter-spacing: -1px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Registration Successful!</h1>
+        <p style="color: #495057; margin-bottom: 2.5rem; font-size: 1.1rem; font-weight: 500;">Registration saved and email sent!</p>
+        
+        <a href="/login" class="button" style="
+            display: inline-block; 
+            padding: 1.2rem 2rem; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            color: white; 
+            text-decoration: none; 
+            border: none; 
+            border-radius: 12px; 
+            cursor: pointer; 
+            font-size: 1rem; 
+            font-weight: 800; 
+            width: auto;
+            max-width: 250px;
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3); 
+            text-transform: uppercase; 
+            letter-spacing: 1.2px; 
+            transition: all 0.3s ease;
+        ">Login</a>
     </div>
 </body>
 </html>"#
     );
 
-    match mailer.send(&email) {
+    match mailer.send(&email_message) {
         Ok(_) => Ok(HttpResponse::Ok().content_type("text/html").body(response_body)),
-        Err(_) => Ok(HttpResponse::InternalServerError().body("Failed to send email")),
+        Err(e) => {
+            println!("Email send error: {:?}", e);
+            Ok(HttpResponse::InternalServerError().body(format!("Failed to send email: {}", e)))
+        }
     }
 }
+
 
 // LIST USERS
 async fn list_users(
@@ -127,7 +208,7 @@ async fn list_users(
     }
 
     // 2. Fetch and display users for the admin
-    let users = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users")
+    let users = sqlx::query_as::<_, User>("SELECT id, name, email, created_at, profile_picture FROM users")
         .fetch_all(pool.get_ref())
         .await
         .unwrap();
@@ -149,7 +230,7 @@ async fn view_user(
     let requested_id = path.into_inner();
 
     // Fetch the user
-    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users WHERE id = $1")
+    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at, profile_picture FROM users WHERE id = $1")
         .bind(requested_id)
         .fetch_one(pool.get_ref())
         .await
@@ -171,7 +252,7 @@ pub async fn edit_user_form(
 ) -> impl Responder {
     let user_id = path.into_inner();
 
-    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users WHERE id = $1")
+    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at, profile_picture FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_one(pool.get_ref())
         .await;
@@ -336,7 +417,7 @@ async fn profile(
     };
 
     // 2. Fetch user details from DB
-    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at FROM users WHERE id = $1")
+    let user = sqlx::query_as::<_, User>("SELECT id, name, email, created_at, profile_picture FROM users WHERE id = $1")
         .bind(user_id)
         .fetch_optional(pool.get_ref())
         .await
@@ -384,9 +465,9 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to initialize Tera templates");
 
     // Create Redis store BEFORE HttpServer::new
-    let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
-        .await
-        .expect("Failed to connect to Redis");
+    // let redis_store = RedisSessionStore::new("redis://127.0.0.1:6379")
+    //     .await
+    //     .expect("Failed to connect to Redis");
     
     let key = Key::from(
         std::env::var("SESSION_SECRET")
@@ -400,10 +481,12 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(tera.clone()))
             
             .wrap(
-                SessionMiddleware::new(
-                    redis_store.clone(),
+                SessionMiddleware::builder(
+                    CookieSessionStore::default(),
                     key.clone(),
                 )
+                .cookie_secure(false)
+                .build()
             )
 
             // Form submission
