@@ -126,13 +126,30 @@
 </head>
 <body>
     <div class="container">
-        <h1>User Profile</h1>
+        <h1>Welcome {{ user.name }}</h1>
         {% if user.profile_picture %}
             <img src="data:image/png;base64,{{ user.profile_picture }}" alt="Profile Picture" width="100" height="100">
         {% endif %}
         <p><strong>ID:</strong> {{ user.id }}</p>
         <p><strong>Name:</strong> {{ user.name }}</p>
         <p><strong>Email:</strong> {{ user.email }}</p>
+        <p><strong>Phone:</strong>{% if user.phone_number %}{{ user.phone_number }}
+            {% else %}
+                N/A
+            {% endif %}
+        </p>
+        <p><strong>Address:</strong>{% if user.address %}{{ user.address }}
+            {% else %}
+                N/A
+            {% endif %}
+        </p>
+
+        <p><strong>Emergency Contact:</strong>{% if user.emergency_contact %}{{ user.emergency_contact }}
+            {% else %}
+                N/A
+            {% endif %}
+        </p>
+
         <p><strong>Created At:</strong> {{ user.created_at }}</p>
 
          <p><a
@@ -141,6 +158,7 @@
 
         {% if is_admin %}
             <p><a href="/users">View All Registered Users</a></p>
+            <p><a href="/admin/payments">View All Payments</a></p>
         {% endif %}
     </div>
 </body>
