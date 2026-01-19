@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Payments</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            text-align: center;
+            margin: 0;
+            padding: 40px 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.08);
+            padding: 3.5rem;
+            max-width: 800px;
+            width: 100%;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+
+        .container:hover {
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.12);
+        }
+        
+        h1 {
+            color: #1a1a2e;
+            margin-top: 0;
+            margin-bottom: 2rem;
+            font-size: 2.2rem;
+            font-weight: 800;
+            letter-spacing: -1px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        p {
+            color: #495057;
+            font-size: 1.05rem;
+            margin: 1.5rem 0;
+            line-height: 1.6;
+            font-weight: 500;
+        }
+
+        .payments-section {
+            text-align: left;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 1.5rem;
+            text-decoration: none;
+            color: #667eea;
+            font-weight: bold;
+            font-size: 0.95rem;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="text-align: left;">
+            <a href="/dashboard" class="back-link">Back to Dashboard</a>
+        </div>
+        
+        <h1>My Payments</h1>
+
+        <div class="payments-section">
+            <h2 style="color: #495057; font-size: 1.5rem; margin-bottom: 1rem;">Make a Payment</h2>
+            <form action="/payment/submit" method="POST" style="margin-bottom: 2rem;">
+                <p style="margin-bottom: 1rem; color: #495057;">Registration Fee: <strong>5,000.00</strong></p>
+                <button type="submit" style="
+                    padding: 12px 25px; 
+                    background: linear-gradient(135deg, #099773 0%, #0ba360 100%); 
+                    color: white; 
+                    border: none; 
+                    border-radius: 8px; 
+                    cursor: pointer; 
+                    font-weight: bold;
+                    font-size: 1rem;
+                    box-shadow: 0 4px 12px rgba(9, 151, 115, 0.3);
+                ">Pay with Paystack</button>
+            </form>
+
+            <hr style="margin: 2rem 0; border: 0; height: 1px; background: rgba(0,0,0,0.1);">
+
+            <h2 style="color: #495057; font-size: 1.5rem; margin-bottom: 1rem;">Payment History</h2>
+            {% if payments %}
+            <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                <thead>
+                    <tr style="background-color: #f8f9fa;">
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Amount</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Status</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Date</th>
+                        <th style="padding: 12px; text-align: left; border-bottom: 2px solid #dee2e6;">Receipt</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in payments %}
+                    <tr>
+                        <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">${{ payment.amount }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">
+                            <span style="
+                                padding: 5px 10px; 
+                                border-radius: 20px; 
+                                font-size: 0.85rem; 
+                                font-weight: bold;
+                                background-color: {% if payment.status == 'Completed' %}#d4edda{% else %}#fff3cd{% endif %};
+                                color: {% if payment.status == 'Completed' %}#155724{% else %}#856404{% endif %};
+                            ">
+                                {{ payment.status }}
+                            </span>
+                        </td>
+                        <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">{{ payment.created_at }}</td>
+                        <td style="padding: 12px; border-bottom: 1px solid #dee2e6;">
+                            {% if payment.status == 'Completed' %}
+                            <a href="/payment/{{ payment.id }}/receipt" style="
+                                display: inline-block;
+                                padding: 5px 10px; 
+                                border-radius: 8px; 
+                                font-size: 0.85rem; 
+                                font-weight: bold;
+                                background: #6c757d; 
+                                color: white; 
+                                text-decoration: none; 
+                                box-shadow: none; 
+                                margin: 0;
+                                width: auto; 
+                            ">Download</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+                <p>No payments found.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
